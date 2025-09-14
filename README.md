@@ -23,6 +23,7 @@ This is a ROS2 package for a differential drive robot called "Gravis". The robot
 sudo apt install ros-humble-gazebo-ros-pkgs
 sudo apt install ros-humble-nav2-bringup
 sudo apt install ros-humble-navigation2
+sudo apt install ros-humble-slam-toolbox
 sudo apt install ros-humble-twist-mux
 sudo apt install ros-humble-robot-state-publisher
 sudo apt install ros-humble-joint-state-publisher
@@ -76,6 +77,7 @@ sudo apt update
 sudo apt install ros-humble-gazebo-ros-pkgs
 sudo apt install ros-humble-nav2-bringup
 sudo apt install ros-humble-navigation2
+sudo apt install ros-humble-slam-toolbox
 sudo apt install ros-humble-twist-mux
 sudo apt install ros-humble-robot-state-publisher
 sudo apt install ros-humble-joint-state-publisher
@@ -136,15 +138,42 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args --remap cmd_vel:
 ```
 
 #### 3. Navigation Control
-For autonomous navigation, first start the simulation, then launch navigation:
+For autonomous navigation, you have two options:
+
+**Option A: SLAM (Simultaneous Localization and Mapping)**
+For creating a map while navigating:
+```bash
+# Terminal 1: Start simulation (now uses obstacles.world by default)
+ros2 launch articubot_one launch_sim.launch.py
+
+# Terminal 2: Start SLAM mapping
+ros2 launch articubot_one online_async_launch.py use_sim_time:=true
+
+# Terminal 3: Start RViz for visualization
+rviz2 -d /home/dimo/Dev/ros2_ws/src/articubot_one/config/main.rviz
+
+# Terminal 4: Control the robot (optional - can also use joystick)
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args --remap cmd_vel:=cmd_vel_joy
+```
+
+**Important for SLAM**: 
+- The robot must be in an environment with obstacles for SLAM to work
+- Drive the robot around to build the map
+- In RViz, set Fixed Frame to `map` and add Map display with topic `/map`
+
+**Option B: Navigation with pre-existing map**
+If you already have a map file:
 ```bash
 # Terminal 1: Start simulation
 ros2 launch articubot_one launch_sim.launch.py
 
-# Terminal 2: Start navigation
+# Terminal 2: Start map server (replace 'your_map.yaml' with your map file)
+ros2 run nav2_map_server map_server --ros-args -p yaml_filename:=your_map.yaml -p use_sim_time:=true
+
+# Terminal 3: Start navigation
 ros2 launch articubot_one navigation_launch.py use_sim_time:=true
 
-# Terminal 3: Start localization (if needed)
+# Terminal 4: Start localization (if needed)
 ros2 launch articubot_one localization_launch.py use_sim_time:=true
 ```
 
@@ -207,7 +236,7 @@ articubot_one/ (Gravis Robot Package)
 │   └── *.launch.py                 # Other specific launchers
 └── worlds/                     # Gazebo world files
     ├── empty.world                 # Empty environment
-    └── obstacles.world             # Environment with obstacles
+    └── obstacles.world             # Environment with obstacles (used by default for SLAM)
 ```
 
 ### Key Components Explained
@@ -247,6 +276,24 @@ This package uses the standard ROS2/ament_cmake build system. To modify the robo
 - **No camera image**: Verify camera topic with `ros2 topic list | grep camera`
 - **Navigation issues**: Ensure map is loaded and localization is working
 - **Joystick not working**: Check device permissions and that joy_node is publishing
+- **"Invalid frame ID 'map'" error**: You need to either:
+  - Start SLAM first: `ros2 launch articubot_one online_async_launch.py use_sim_time:=true`
+  - Or load a pre-existing map with the map server before starting navigation
+- **SLAM not building a map / RViz shows empty map**: This happens when the laser scanner can't detect obstacles:
+  - **Problem**: Robot is in empty space with no walls/obstacles for the laser to detect (all laser ranges show `.inf`)
+  - **Solution**: Use the world with obstacles: The launch file has been updated to use `obstacles.world` by default
+  - **Verify laser data**: Check if laser is detecting obstacles: `ros2 topic echo /scan --once` (ranges should not all be `.inf`)
+  - **In RViz**: Set Fixed Frame to `map`, add Map display with topic `/map`, add LaserScan display with topic `/scan`
+  - **Drive the robot**: SLAM needs the robot to move around to build the map
+- **Transform errors in RViz**: "Could not transform from [] to [odom]":
+  - Set RViz Fixed Frame to `map` (not `odom` or other frames)
+  - Ensure SLAM is running: `ros2 node list` should show `/slam_toolbox`
+  - Check TF tree: `ros2 run tf2_tools view_frames` should show `map→odom→base_link` chain
+- **Robot not spawning in Gazebo**: If you see `gzserver process has died [exit code 255]`:
+  - Check if Gazebo is properly installed: `gazebo --version`
+  - Kill any existing Gazebo processes: `killall gzserver gzclient`
+  - Try launching Gazebo standalone first: `gazebo`
+  - Check for graphics/GPU issues by trying: `export SVGA_VGPU10=0` then relaunch
 
 ### Installation Issues
 
